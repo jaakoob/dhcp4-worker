@@ -1,0 +1,13 @@
+RABBITMQ_SERVER = [
+    "selenium.csn.tu-chemnitz.de",
+    "polonium.csn.tu-chemnitz.de",
+    "tellurium.csn.tu-chemnitz.de",
+]
+
+RABBITMQ_USERNAME = ''
+RABBITMQ_PASSWORD = ''
+RABBITMQ_PORT = 5671
+RABBITMQ_QUEUE_NAME = 'dhcpv4-queue-carbon'
+RABBITMQ_EXCHANGE_NAME = 'dhcpv4'
+
+JSON_SCHEMA_PATH = ''
