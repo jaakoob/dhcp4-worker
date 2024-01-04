@@ -1,5 +1,5 @@
 import logging
-import sys
+import time
 from logging.handlers import SysLogHandler
 from prometheus_client import start_http_server, Counter
 import random
@@ -62,8 +62,9 @@ def update_dhcp(ch: pika.channel.Channel, method_frame: pika.spec.Basic.Deliver,
 def main():
     logger = logging.getLogger()
     logger.addHandler(SysLogHandler(address='/dev/log'))
+    #import sys
     #logger.addHandler(logging.StreamHandler(sys.stdout))
-    logger.setLevel(logging.WARNING)
+    logger.setLevel(logging.INFO)
 
     start_http_server(9765)
 
@@ -75,11 +76,24 @@ def main():
             random.shuffle(cfg.RABBITMQ_SERVER)
             con = pika.BlockingConnection(pika.ConnectionParameters(host=cfg.RABBITMQ_SERVER[0],
                                                                     port=cfg.RABBITMQ_PORT,
-                                                                    virtual_host='/',
+                                                                    virtual_host=cfg.RABBITMQ_VHOST,
                                                                     ssl_options=pika.SSLOptions(context=ssl.create_default_context()),
                                                                     credentials=pika.PlainCredentials(cfg.RABBITMQ_USERNAME, cfg.RABBITMQ_PASSWORD)))
             ch = con.channel()
-            ch.basic_consume(queue=cfg.RABBITMQ_QUEUE_NAME, on_message_callback=update_dhcp, auto_ack=True)
+            if cfg.RABBITMQ_CREATE_ITEMS:
+                # declare exchange if not existing yet
+                ch.exchange_declare(cfg.RABBITMQ_EXCHANGE_NAME, exchange_type='fanout')
+                # create new queue only usable by this connection
+                res = ch.queue_declare('', exclusive=True)
+                queue_name = res.method.queue
+                # bind queue to exchange
+                ch.queue_bind(exchange=cfg.RABBITMQ_EXCHANGE_NAME, queue=queue_name)
+                # consume from tmp queue
+                ch.basic_consume(queue=queue_name, on_message_callback=update_dhcp, auto_ack=True)
+
+            else:
+                ch.basic_consume(queue=cfg.RABBITMQ_QUEUE_NAME, on_message_callback=update_dhcp, auto_ack=True)
+
             logging.debug("bound to rabbitmq channel")
             try:
                 ch.start_consuming()
@@ -90,6 +104,7 @@ def main():
         except pika.exceptions.ConnectionClosedByBroker:
             logging.warning("AQMP connection was closed by a broker, retrying...")
             RABBIT_RECONNECTS.inc()
+            time.sleep(3)
             continue
         # Do not recover on channel errors
         except pika.exceptions.AMQPChannelError as err:
@@ -99,6 +114,7 @@ def main():
         except pika.exceptions.AMQPConnectionError:
             RABBIT_RECONNECTS.inc()
             logging.warning("AMQP Connection was closed, retrying...")
+            time.sleep(3)
             continue
 
 
